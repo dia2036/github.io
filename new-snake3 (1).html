@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang = "jp">
+  <head>
+    <meta charset = "UTF-8">
+    <title>Snake Game</title>
+  </head>
+  <body>
+    <div align="center" width="600" height="300">
+      <div height="300" id="score">0</div>
+      <div height="300" id="updateTime">100</div>
+      <div height="300" id="bonusSpeed">0</div>
+    </div>
+
+    <div align="center" width="600" height="500">
+      <canvas id="gameCanvas" width="300" height="300"></canvas>
+      <br>
+      <button align="center" onclick="togglePause()">Start / Pause</button>
+    </div>
+
+    <h2>更新</h2>
+    <h3>foodの追加</h3>
+    <p>yellow:スコアを50増やし、体を2つ短くする。10%で出現</p>
+    <p>black:スコアが10減り、ボーナススピードを10増やす。20%で出現</p>
+    <p>purple:スコアが20減り、ゲームスピードを10減らす。20%で出現</p>
+    <p>green:スコアを30増やし、ボーナススピードをリセットする。10%で出現</p>
+    <br>
+    <h3>ボーナススピードの可視化</h3>
+    <p>スコアの下にボーナススピードを表示</p>
+    <br>
+    <h2>設定理由</h2>
+    <p>資料の設定では黒のえさを取った時、減速するのみで速度が増える緊張感がなく、
+      つまらないと感じるのではないかと感じた。
+      そのためボーナススピードを紫の加速、緑のリセットの要素を加え、速度に変化を持たせた。
+      <br>
+      ボーナススピードがすぐにリセットされ、元の速度に戻るのは、
+      前述の通り緊張感を持たせられないため、リセットの確率を下げ、速度に変化を持たせるために
+      出現確率を設定した。
+    </p>
+
+    <script>
+      /** CONSTANTS **/
+      const CANVAS_BORDER_COLOUR = "black";
+      const CANVAS_BACKGROUND_COLOUR = "white";
+      const SNAKE_COLOUR = "lightgreen";
+      const SNAKE_BORDER_COLOUR = "darkgreen";
+      const FOOD_COLOUR = "red";
+      const FOOD_BORDER_COLOUR = "darkred";
+
+      let foodType = "r";
+      let foodColour = "red";
+      let bonusSpeed = 0;
+
+      let snake = [
+        {x: 150, y: 150},
+        {x: 140, y: 150},
+        {x: 130, y: 150},
+        {x: 120, y: 150},
+        {x: 110, y: 150}
+      ];
+
+      // The user's score
+      let score = 0;
+
+      // Food x-coodinate
+      let foodX;
+      // Food y-coodinate
+      let foodY;
+
+      // Horizontal velocity
+      let dx = 10;
+      // Vertical velocity
+      let dy = 0;
+
+      // Initial Paused　State is true. 
+      let paused=true;
+
+      // 講義11回目のための宣言
+      let updateTime = 100;
+
+      // Get the canvas element
+      var gameCanvas = document.getElementById("gameCanvas");
+      // Return a two dimensional drawing context
+      var ctx = gameCanvas.getContext("2d");
+      // Select the colour to fill the canvas
+      ctx.fillStyle = CANVAS_BACKGROUND_COLOUR;
+      // Select the colour for the border of the canvas
+      ctx.strokeStyle = CANVAS_BORDER_COLOUR;
+      // Draw a "filled" rectangle to cover the entire canvas
+      ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+      // Draw a "border" around the entire canvas
+      ctx.strokeRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+      // Start game
+      main();
+
+      // Create the first food location
+      createFood();
+      // Call changeDirection whenever a key is pressed
+      document.addEventListener("keydown", changeDirection);
+
+      //document.addEventListener("click", togglePause);
+
+
+      function main() {
+        // ゲーム終了条件が満たされているか確認する。
+        // 満たされた場合、コードの実行を終了する（return）
+        if (didGameEnd()) return;
+
+        console.log("Paused: " + paused);
+
+        if (paused) {
+          ctx.font="30px Arial";
+          ctx.fillStyle="orange";
+          ctx.fillText("GamePaused", 50, 150);
+        }
+        else {
+          setTimeout(function onTick() {
+            clearCanvas();
+            drawFood();
+            advanceSnake();
+            drawSnake();
+
+            // Call main again
+            main();
+          }, updateTime /*100*/);
+        }
+      }
+
+      /**
+       *
+       */
+      function togglePause() {
+        // ゲームの状態がpausedであれば(true)、切り替えてfalseにする
+        if (paused) {
+          paused = false; 
+          main();
+        }
+        // ゲームの状態がpausedでないなら（false）、切り替えてtrueにする
+        else {
+          paused=true;
+        }
+
+        console.log("Paused: " + paused);
+      }
+
+      /**
+       * Change the background colour of the canvas to CANVAS_BACKGROUND_COLOUR and
+       * draw a border around it
+       */
+      function clearCanvas() {
+        // Select the colour to fill the canvas
+        ctx.fillStyle = CANVAS_BACKGROUND_COLOUR;
+        // Select the colour for the border of the canvas
+        ctx.strokeStyle = CANVAS_BORDER_COLOUR;
+
+        // Draw a "filled" rectangle to cover the entire canvas
+        ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+        // Draw a "border" around the entire canvas
+        ctx.strokeRect(0, 0, gameCanvas.width, gameCanvas.height);
+      }
+
+      /**
+       * Returns true if the head of the snake touched another part of the snake
+       * or any of the walls
+       */
+      function didGameEnd() {
+        // 自分の身体とぶつかったか確認
+        for (let i = 4; i < snake.length; i++) {
+          const didCollide = snake[i].x === snake[0].x && snake[i].y === snake[0].y;
+          if (didCollide) return true
+        }
+
+        // 壁とぶつかったか確認
+        const hitLeftWall = snake[0].x < 0;
+        const hitRightWall = snake[0].x >= gameCanvas.width;
+        const hitTopWall = snake[0].y < 0;
+        const hitBottomWall = snake[0].y >= gameCanvas.height;
+
+        return hitLeftWall || hitRightWall || hitTopWall || hitBottomWall
+      }
+
+      /**
+       * Draw the food on the canvas
+       */
+      function drawFood() {
+        ctx.fillStyle = foodColour;
+        ctx.strokeStyle = FOOD_BORDER_COLOUR;
+        ctx.fillRect(foodX, foodY, 10, 10);
+        ctx.strokeRect(foodX, foodY, 10, 10);
+      }
+
+      /**
+       * Advances the snake by changing the x-coordinates of its parts
+       * according to the horizontal velocity and the y-coordinates of its parts
+       * according to the vertical veolocity
+       */
+      function advanceSnake() {
+        // Create the new Snake's head
+        const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+        // Add the new head to the beginning of snake body
+        snake.unshift(head);
+
+
+        const didEatFood = snake[0].x === foodX && snake[0].y === foodY;
+        if (didEatFood) {
+          switch(foodType) {
+            case "g":
+              score += 30
+              bonusSpeed = 0;
+              break;
+            case "p":
+              score += 20
+              bonusSpeed -= 10;
+              break;
+            case "y": 
+              score += 50;
+              snake.pop();
+              snake.pop();
+              snake.pop();
+              break;
+            case "b":
+              score -= 10;
+              bonusSpeed += 10;
+              break;
+            default:
+              score += 10;
+              break;
+          }
+
+          // Display score on screen
+          document.getElementById("score").innerHTML = score;
+
+          // Generate new food location
+          createFood();
+
+          /**
+           * 講義11回目の解答例
+           * ut = ut_init - ut_range * Math.tanh(ut_step * score)
+           *
+           * ut       => updateTime  [abbreviation]
+           * ut_init  => updateTimeの初期値
+           * ut_range => updateTimeの最大減少幅
+           * ut_step  => updateTimeのscore依存性を表す係数
+           */
+
+          updateTime = 100 - 50 * Math.tanh(0.001*score) + bonusSpeed;
+
+          document.getElementById("updateTime").innerHTML = Math.floor(updateTime);
+          document.getElementById("bonusSpeed").innerHTML = Math.floor(bonusSpeed);
+        } else {
+          // Remove the last part of snake body
+          snake.pop();
+        }
+      }
+
+      /**
+       * Generates a random number that is a multiple of 10 given a minumum
+       * and a maximum number
+       * @param { number } min - The minimum number the random number can be
+       * @param { number } max - The maximum number the random number can be
+       */
+      function randomTen(min, max) {
+        return Math.round((Math.random() * (max-min) + min) / 10) * 10;
+      }
+
+      /**
+       * Creates random set of coordinates for the snake food.
+       */
+      function createFood() {
+        // Generate a random number the food x-coordinate
+        foodX = randomTen(0, gameCanvas.width - 10);
+        // Generate a random number for the food y-coordinate
+        foodY = randomTen(0, gameCanvas.height - 10);
+
+        // if the new food location is where the snake currently is, generate a new food location
+        snake.forEach(function isOnSnake(part) {
+          if (part.x == foodX && part.y == foodY) createFood();
+        });
+
+        foodTypeRand = Math.random(0, 1); 
+        if (foodTypeRand < 0.20) {
+          foodType = "b";
+          foodColour = "black"; 
+        }
+        else if (foodTypeRand < 0.40) {
+          foodType = "p";
+          foodColour = "purple";
+        }
+        else if (foodTypeRand < 0.50) {
+          foodType = "y";
+          foodColour = "yellow"; 
+        }
+        else if (foodTypeRand < 0.60) {
+          foodType = "g";
+          foodColour = "green";
+        }
+        else {
+          foodType = "r";
+          foodColour = "red"; }
+
+      }
+
+
+      /**
+       * Draws the snake on the canvas
+       */
+      function drawSnake() {
+        // loop through the snake parts drawing each part on the canvas
+        snake.forEach(drawSnakePart)
+      }
+      /**
+       * Draws a part of the snake on the canvas
+       * @param { object } snakePart - The coordinates where the part should be drawn
+       */
+      function drawSnakePart(snakePart) {
+        // Set the colour of the snake part
+        ctx.fillStyle = SNAKE_COLOUR;
+        // Set the border colour of the snake part
+        ctx.strokeStyle = SNAKE_BORDER_COLOUR;
+        // Draw a "filled" rectangle to represent the snake part at the coordinates
+        // the part is located
+        ctx.fillRect(snakePart.x, snakePart.y, 10, 10);
+        // Draw a border around the snake part
+        ctx.strokeRect(snakePart.x, snakePart.y, 10, 10);
+      }
+
+      /**
+       * Changes the vertical and horizontal velocity of the snake according to the
+       * key that was pressed.
+       * The direction cannot be switched to the opposite direction, to prevent the snake
+       * from reversing
+       * For example if the the direction is 'right' it cannot become 'left'
+       * @param { object } event - The keydown event
+       */
+      function changeDirection(event) {
+        const LEFT_KEY = 37;
+        const RIGHT_KEY = 39;
+        const UP_KEY = 38;
+        const DOWN_KEY = 40;
+
+        const PAUSE = 80;
+
+        const keyPressed = event.keyCode;
+
+        const goingUp = dy === -10;
+        const goingDown = dy === 10;
+        const goingRight = dx === 10;
+        const goingLeft = dx === -10;
+
+        if (keyPressed === PAUSE) {
+          togglePause();
+        }
+
+
+        if (keyPressed === LEFT_KEY && !goingRight) {
+          dx = -10;
+          dy = 0;
+        }
+
+        if (keyPressed === UP_KEY && !goingDown) {
+          dx = 0;
+          dy = -10;
+        }
+
+        if (keyPressed === RIGHT_KEY && !goingLeft) {
+          dx = 10;
+          dy = 0;
+        }
+
+        if (keyPressed === DOWN_KEY && !goingUp) {
+          dx = 0;
+          dy = 10;
+        }
+      }
+    </script>
+  </body>
+</html>
